@@ -13,7 +13,7 @@ const app = express();
 
 app.use(
   cors({
-    origin: "http://localhost:3000", // frontend origin
+    origin: process.env.APP_ORIGIN, // frontend origin
     credentials: true, // 🔥 allow cookies/credentials
   })
 );
@@ -43,6 +43,10 @@ async function downloadFile(url, outputPath) {
     writer.on("error", reject);
   });
 }
+
+app.get("/", (_, res) => {
+  res.send("Server is healthy");
+});
 
 /**
  * Endpoint to process Cloudinary URL
@@ -116,7 +120,7 @@ app.post("/api/trim", async (req, res) => {
 // Serve output videos
 app.use(
   "/output",
-  (req, res, next) => {
+  (_, res, next) => {
     res.setHeader("Content-Type", "video/mp4");
     // res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -126,5 +130,5 @@ app.use(
 );
 
 app.listen(4000, () => {
-  console.log("🚀 Video Processor running at http://localhost:4000");
+  console.log("Video Processor running at http://localhost:4000");
 });
