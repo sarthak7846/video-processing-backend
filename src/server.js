@@ -13,8 +13,8 @@ const app = express();
 
 app.use(
   cors({
-    origin: "http://localhost:3000",
-    credentials: true,
+    origin: process.env.APP_ORIGIN, // frontend origin
+    credentials: true, // 🔥 allow cookies/credentials
   })
 );
 
@@ -50,7 +50,11 @@ async function downloadFile(url, outputPath) {
   });
 }
 
-// TRIM ENDPOINT
+
+app.get("/", (_, res) => {
+  res.send("Server is healthy");
+});
+
 app.post("/api/trim", async (req, res) => {
   const { videoUrl, startTime, endTime } = req.body;
   console.log("📥 Received Trim Request:", { videoUrl, startTime, endTime });
@@ -113,7 +117,7 @@ app.post("/api/trim", async (req, res) => {
 // Serve output videos
 app.use(
   "/output",
-  (req, res, next) => {
+  (_, res, next) => {
     res.setHeader("Content-Type", "video/mp4");
     res.setHeader("Access-Control-Allow-Origin", "*");
     next();
@@ -122,5 +126,5 @@ app.use(
 );
 
 app.listen(4000, () => {
-  console.log("🚀 Video Processor running at http://localhost:4000");
+  console.log("Video Processor running at http://localhost:4000");
 });
