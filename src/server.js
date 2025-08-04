@@ -13,8 +13,8 @@ const app = express();
 
 app.use(
   cors({
-    origin: "http://localhost:3000", // frontend origin
-    credentials: true, // 🔥 allow cookies/credentials
+    origin: "http://localhost:3000",
+    credentials: true,
   })
 );
 
@@ -27,9 +27,15 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const OUTPUT_DIR = path.join(__dirname, "output");
 if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
 
-/**
- * Download file from URL
- */
+// Parse "HH:MM:SS" to total seconds
+function parseTimeToSeconds(timeStr) {
+  const parts = timeStr.split(":").map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return NaN;
+  const [hh, mm, ss] = parts;
+  return hh * 3600 + mm * 60 + ss;
+}
+
+// Download file from URL
 async function downloadFile(url, outputPath) {
   const writer = fs.createWriteStream(outputPath);
   const response = await axios({
@@ -44,24 +50,19 @@ async function downloadFile(url, outputPath) {
   });
 }
 
-/**
- * Endpoint to process Cloudinary URL
- */
+// TRIM ENDPOINT
 app.post("/api/trim", async (req, res) => {
   const { videoUrl, startTime, endTime } = req.body;
   console.log("📥 Received Trim Request:", { videoUrl, startTime, endTime });
-  console.log("videoUrl:", videoUrl);
-  console.log("startTime:", startTime);
-  console.log("endTime:", endTime);
 
-  if (
-    !videoUrl ||
-    startTime === undefined ||
-    endTime === undefined ||
-    endTime <= startTime
-  ) {
-    console.log("❌ Validation failed");
-    return res.status(400).json({ error: "Invalid input" });
+  // Convert to seconds
+  const startInSec = parseTimeToSeconds(startTime);
+  const endInSec = parseTimeToSeconds(endTime);
+  const duration = endInSec - startInSec;
+
+  if (!videoUrl || isNaN(startInSec) || isNaN(endInSec) || duration <= 0) {
+    console.log("❌ Invalid trim times:", { start: startInSec, end: endInSec });
+    return res.status(400).json({ error: "Invalid trim times" });
   }
 
   const jobId = uuidv4();
@@ -69,20 +70,19 @@ app.post("/api/trim", async (req, res) => {
   const outputPath = path.join(OUTPUT_DIR, `${jobId}.mp4`);
 
   try {
-    // Step 1: Download from Cloudinary
+    // Download from Cloudinary
     await downloadFile(videoUrl, inputPath);
     console.log("✅ Video downloaded");
 
-    // Step 2: Trim with ffmpeg
+    // Trim with ffmpeg
     ffmpeg(inputPath)
-      .setStartTime(startTime)
-      .setDuration(endTime - startTime)
+      .setStartTime(startInSec)
+      .setDuration(duration)
       .output(outputPath)
       .on("end", async () => {
         console.log("✅ Video trimmed");
 
         try {
-          // Step 3: Upload to Cloudinary
           const result = await cloudinary.uploader.upload(outputPath, {
             resource_type: "video",
             folder: "trimmed_videos",
@@ -90,9 +90,6 @@ app.post("/api/trim", async (req, res) => {
           });
 
           console.log("✅ Uploaded to Cloudinary");
-          console.log(result);
-
-          // Step 4: Cleanup local files
           fs.unlinkSync(inputPath);
           fs.unlinkSync(outputPath);
 
@@ -103,7 +100,7 @@ app.post("/api/trim", async (req, res) => {
         }
       })
       .on("error", (err) => {
-        console.error("❌ Trimming Error:", err);
+        console.error("❌ Trimming Error:", err.message);
         res.status(500).json({ error: "Trimming failed" });
       })
       .run();
@@ -118,7 +115,6 @@ app.use(
   "/output",
   (req, res, next) => {
     res.setHeader("Content-Type", "video/mp4");
-    // res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     res.setHeader("Access-Control-Allow-Origin", "*");
     next();
   },
