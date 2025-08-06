@@ -50,67 +50,110 @@ async function downloadFile(url, outputPath) {
   });
 }
 
-
 app.get("/", (_, res) => {
   res.send("Server is healthy");
 });
 
 app.post("/api/trim", async (req, res) => {
-  const { videoUrl, startTime, endTime } = req.body;
-  console.log("📥 Received Trim Request:", { videoUrl, startTime, endTime });
+  const { videoUrl, segments } = req.body;
+  console.log("📥 Received Trim Request:", { videoUrl, segments });
 
-  // Convert to seconds
-  const startInSec = parseTimeToSeconds(startTime);
-  const endInSec = parseTimeToSeconds(endTime);
-  const duration = endInSec - startInSec;
-
-  if (!videoUrl || isNaN(startInSec) || isNaN(endInSec) || duration <= 0) {
-    console.log("❌ Invalid trim times:", { start: startInSec, end: endInSec });
-    return res.status(400).json({ error: "Invalid trim times" });
+  if (
+    !videoUrl ||
+    !segments ||
+    !Array.isArray(segments) ||
+    segments.length === 0
+  ) {
+    return res.status(400).json({ error: "Invalid video URL or segments" });
   }
 
   const jobId = uuidv4();
   const inputPath = path.join(__dirname, "uploads", `${jobId}-input.mp4`);
-  const outputPath = path.join(OUTPUT_DIR, `${jobId}.mp4`);
+  const outputDir = path.join(__dirname, "output", jobId);
+  const concatListPath = path.join(outputDir, "concat.txt");
+  const finalOutputPath = path.join(__dirname, "output", `${jobId}-final.mp4`);
 
   try {
-    // Download from Cloudinary
+    // Prepare output dir
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    // 1. Download original video
     await downloadFile(videoUrl, inputPath);
     console.log("✅ Video downloaded");
 
-    // Trim with ffmpeg
-    ffmpeg(inputPath)
-      .setStartTime(startInSec)
-      .setDuration(duration)
-      .output(outputPath)
-      .on("end", async () => {
-        console.log("✅ Video trimmed");
+    // 2. Trim each segment
+    const segmentFiles = [];
 
-        try {
-          const result = await cloudinary.uploader.upload(outputPath, {
-            resource_type: "video",
-            folder: "trimmed_videos",
-            public_id: jobId,
-          });
+    for (let i = 0; i < segments.length; i++) {
+      const { start, end } = segments[i];
+      const startSec = parseTimeToSeconds(start);
+      const endSec = parseTimeToSeconds(end);
+      const duration = endSec - startSec;
 
-          console.log("✅ Uploaded to Cloudinary");
-          fs.unlinkSync(inputPath);
-          fs.unlinkSync(outputPath);
+      if (isNaN(startSec) || isNaN(endSec) || duration <= 0) {
+        throw new Error(`Invalid segment time at index ${i}`);
+      }
 
-          res.json({ trimmedUrl: result.secure_url });
-        } catch (cloudErr) {
-          console.error("❌ Cloudinary Upload Error:", cloudErr.message);
-          res.status(500).json({ error: "Cloudinary upload failed" });
-        }
-      })
-      .on("error", (err) => {
-        console.error("❌ Trimming Error:", err.message);
-        res.status(500).json({ error: "Trimming failed" });
-      })
-      .run();
+      const segmentOutput = path.join(outputDir, `part${i}.mp4`);
+      segmentFiles.push(segmentOutput);
+
+      await new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+          .setStartTime(startSec)
+          .setDuration(duration)
+          .output(segmentOutput)
+          .on("end", () => {
+            console.log(`✅ Trimmed segment ${i + 1}`);
+            resolve();
+          })
+          .on("error", (err) => {
+            console.error(`❌ Error trimming segment ${i + 1}:`, err.message);
+            reject(err);
+          })
+          .run();
+      });
+    }
+
+    // 3. Create concat list file for FFmpeg
+    const concatText = segmentFiles.map((file) => `file '${file}'`).join("\n");
+    fs.writeFileSync(concatListPath, concatText);
+
+    // 4. Concatenate all segments
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(concatListPath)
+        .inputOptions("-f", "concat", "-safe", "0")
+        .outputOptions("-c", "copy")
+        .output(finalOutputPath)
+        .on("end", () => {
+          console.log("✅ Segments concatenated");
+          resolve();
+        })
+        .on("error", (err) => {
+          console.error("❌ Error during concatenation:", err.message);
+          reject(err);
+        })
+        .run();
+    });
+
+    // 5. Upload final output to Cloudinary
+    const result = await cloudinary.uploader.upload(finalOutputPath, {
+      resource_type: "video",
+      folder: "trimmed_videos",
+      public_id: jobId,
+    });
+
+    // Cleanup
+    fs.unlinkSync(inputPath);
+    fs.unlinkSync(finalOutputPath);
+    segmentFiles.forEach((file) => fs.unlinkSync(file));
+    fs.unlinkSync(concatListPath);
+    fs.rmdirSync(outputDir);
+
+    res.json({ trimmedUrl: result.secure_url });
   } catch (err) {
-    console.error("❌ Download error:", err.message);
-    res.status(500).json({ error: "Download or processing failed" });
+    console.error("❌ Error processing segments:", err.message);
+    res.status(500).json({ error: err.message || "Failed to process video" });
   }
 });
 
