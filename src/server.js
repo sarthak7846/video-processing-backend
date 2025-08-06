@@ -11,10 +11,17 @@ require("dotenv").config();
 
 const app = express();
 
+// app.use(
+//   cors({
+//     origin: process.env.APP_ORIGIN, // frontend origin
+//     credentials: true, // 🔥 allow cookies/credentials
+//   })
+// );
 app.use(
   cors({
-    origin: process.env.APP_ORIGIN, // frontend origin
-    credentials: true, // 🔥 allow cookies/credentials
+    origin: "*", // or "*" for all origins (not recommended in production)
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
