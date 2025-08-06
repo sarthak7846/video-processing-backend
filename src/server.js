@@ -19,11 +19,19 @@ const app = express();
 // );
 app.use(
   cors({
-    origin: "http://localhost:3000", // or "*" for all origins (not recommended in production)
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    origin: "http://localhost:3000",
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "Accept",
+      "X-Requested-With",
+    ],
   })
 );
+
+app.options("*", cors({ origin: "http://localhost:3000", credentials: true }));
 
 app.use(express.json());
 
