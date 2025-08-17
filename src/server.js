@@ -47,13 +47,13 @@ app.use(
 );
 
 // Preflight support
-app.options("*", cors());
+// app.options("*", cors());
 
-app.use(
-  cors({
-    origin: "*",
-  })
-);
+// app.use(
+//   cors({
+//     origin: "*",
+//   })
+// );
 
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 ffmpeg.setFfmpegPath(ffmpegPath);
