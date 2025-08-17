@@ -180,62 +180,66 @@ app.get("/", (_, res) => {
 app.post("/api/trim", async (req, res) => {
   try {
     const { videoUrl, segments } = req.body;
-
     if (!videoUrl || !segments?.length) {
       return res.status(400).json({ error: "Invalid video URL or segments" });
     }
 
     const jobId = uuidv4();
-    const outputPath = path.join(process.cwd(), "output", `${jobId}-final.mp4`);
-    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    const tempDir = path.join(process.cwd(), "output", jobId);
+    fs.mkdirSync(tempDir, { recursive: true });
 
-    // Build FFmpeg filter_complex string like:
-    // [0:v]trim=start=0:end=5,setpts=PTS-STARTPTS[v0]; [0:a]atrim=...,asetpts=...[a0]; ...
-    // then concatenate all streams.
-    const filters = [];
-    const videoLabels = [];
-    const audioLabels = [];
-
-    segments.forEach((seg, i) => {
+    // Step 1: Trim each segment individually
+    const partFiles = [];
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
       const start = parseTimeToSeconds(seg.start);
       const end = parseTimeToSeconds(seg.end);
-      filters.push(
-        `[0:v]trim=${start}:${end},setpts=PTS-STARTPTS[v${i}]`,
-        `[0:a]atrim=${start}:${end},asetpts=PTS-STARTPTS[a${i}]`
-      );
-      videoLabels.push(`[v${i}]`);
-      audioLabels.push(`[a${i}]`);
-    });
+      const duration = end - start;
 
-    const filterComplex = [
-      ...filters,
-      `${videoLabels.join("")}${audioLabels.join("")}concat=n=${
-        segments.length
-      }:v=1:a=1[v][a]`,
-    ].join("; ");
+      const partPath = path.join(tempDir, `part${i}.mp4`);
+      await new Promise((resolve, reject) => {
+        ffmpeg(videoUrl)
+          .setStartTime(start)
+          .setDuration(duration)
+          .outputOptions(["-c copy"]) // fast, no re-encode
+          .output(partPath)
+          .on("end", resolve)
+          .on("error", reject)
+          .run();
+      });
+      partFiles.push(partPath);
+    }
 
+    // Step 2: Create concat list
+    const listPath = path.join(tempDir, "concat.txt");
+    fs.writeFileSync(listPath, partFiles.map(f => `file '${f}'`).join("\n"));
+
+    // Step 3: Concatenate
+    const finalPath = path.join(tempDir, "final.mp4");
     await new Promise((resolve, reject) => {
-      ffmpeg(videoUrl)
-        .complexFilter(filterComplex)
-        .outputOptions(["-map [v]", "-map [a]"])
-        .output(outputPath)
+      ffmpeg()
+        .input(listPath)
+        .inputOptions(["-f concat", "-safe 0"])
+        .outputOptions(["-c copy"])
+        .output(finalPath)
         .on("end", resolve)
         .on("error", reject)
         .run();
     });
 
-    // Upload result to Cloudinary
-    const uploadResult = await cloudinary.uploader.upload(outputPath, {
+    // Step 4: Upload to Cloudinary
+    const uploadResult = await cloudinary.uploader.upload(finalPath, {
       resource_type: "video",
       folder: "trimmed_videos",
       public_id: jobId,
     });
 
-    fs.unlinkSync(outputPath); // cleanup
+    // Cleanup
+    fs.rmSync(tempDir, { recursive: true, force: true });
 
     res.json({ trimmedUrl: uploadResult.secure_url });
   } catch (err) {
-    console.error("❌ Error:", err.message);
+    console.error("❌ Error:", err);
     res.status(500).json({ error: err.message || "Failed to trim video" });
   }
 });
