@@ -90,6 +90,8 @@ app.get("/", (_, res) => {
 });
 
 app.post("/api/trim", async (req, res) => {
+  console.log('body', req.body);
+  
   const { videoUrl, segments } = req.body;
   console.log("📥 Received Trim Request:", { videoUrl, segments });
 
