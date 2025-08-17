@@ -34,8 +34,20 @@ const app = express();
 
 // app.options("*", cors({ origin: "http://localhost:3000", credentials: true }));
 
-app.use(express.json());
+// app.use(express.json());
 // app.use(cors());
+
+// Explicit CORS config
+app.use(
+  cors({
+    origin: ["http://localhost:3000", "https://your-frontend-domain.com"], 
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
+// Preflight support
+app.options("*", cors());
 
 app.use(
   cors({
