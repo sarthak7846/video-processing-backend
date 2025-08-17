@@ -10,31 +10,6 @@ const cloudinary = require("./cloudinary");
 require("dotenv").config();
 
 const app = express();
-
-// TODO - Provide restriction before pushing to prod
-// app.use(
-//   cors({
-//     origin: process.env.APP_ORIGIN, // frontend origin
-//     credentials: true, // 🔥 allow cookies/credentials
-//   })
-// );
-// app.use(
-//   cors({
-//     origin: "http://localhost:3000",
-//     credentials: true,
-//     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-//     allowedHeaders: [
-//       "Content-Type",
-//       "Authorization",
-//       "Accept",
-//       "X-Requested-With",
-//     ],
-//   })
-// );
-
-// app.options("*", cors({ origin: "http://localhost:3000", credentials: true }));
-
-// app.use(express.json());
 // app.use(cors());
 
 // Explicit CORS config
@@ -46,14 +21,7 @@ app.use(
   })
 );
 
-// Preflight support
-// app.options("*", cors());
-
-// app.use(
-//   cors({
-//     origin: "*",
-//   })
-// );
+app.use(express.json());
 
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 ffmpeg.setFfmpegPath(ffmpegPath);
