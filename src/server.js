@@ -11,29 +11,31 @@ require("dotenv").config();
 
 const app = express();
 
+// TODO - Provide restriction before pushing to prod
 // app.use(
 //   cors({
 //     origin: process.env.APP_ORIGIN, // frontend origin
 //     credentials: true, // 🔥 allow cookies/credentials
 //   })
 // );
-app.use(
-  cors({
-    origin: "http://localhost:3000",
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "Accept",
-      "X-Requested-With",
-    ],
-  })
-);
+// app.use(
+//   cors({
+//     origin: "http://localhost:3000",
+//     credentials: true,
+//     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+//     allowedHeaders: [
+//       "Content-Type",
+//       "Authorization",
+//       "Accept",
+//       "X-Requested-With",
+//     ],
+//   })
+// );
 
-app.options("*", cors({ origin: "http://localhost:3000", credentials: true }));
+// app.options("*", cors({ origin: "http://localhost:3000", credentials: true }));
 
 app.use(express.json());
+app.use(cors());
 
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 ffmpeg.setFfmpegPath(ffmpegPath);
@@ -80,6 +82,11 @@ app.post("/api/trim", async (req, res) => {
     segments.length === 0
   ) {
     return res.status(400).json({ error: "Invalid video URL or segments" });
+  }
+
+  const uploadsDir = path.join(__dirname, "uploads");
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
   }
 
   const jobId = uuidv4();
