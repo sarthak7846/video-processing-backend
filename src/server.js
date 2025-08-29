@@ -39,6 +39,7 @@ const upload = multer({
 });
 
 app.post("/api/trim", upload.single("video"), async (req, res) => {
+  console.log("Trim operation started");
   if (!req.file) return res.status(400).json({ error: "Missing video file" });
   if (!req.body?.segments) {
     fs.unlinkSync(req.file.path);
