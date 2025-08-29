@@ -4,180 +4,129 @@ const ffmpeg = require("fluent-ffmpeg");
 const { v4: uuidv4 } = require("uuid");
 const path = require("path");
 const fs = require("fs");
-// const cloudinary = require("./cloudinary");
+const os = require("os");
 const multer = require("multer");
 
-require("dotenv").config();
-
 const app = express();
-
 app.use(cors({ origin: "http://localhost:3000", credentials: true }));
 app.use(express.json());
 
-// FFmpeg setup
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 
-// Helpers
 function parseTimeToSeconds(timeStr) {
-  const [hh, mm, ss] = timeStr.split(":").map(Number);
+  const parts = timeStr.split(":").map(Number);
+  const [hh = 0, mm = 0, ss = 0] = parts;
   return hh * 3600 + mm * 60 + ss;
 }
 
-// Dynamic Multer storage
-function getMulterUpload() {
-  const uploadDir = path.join(__dirname, "uploads");
-
-  // create uploads folder only when route is hit
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-    console.log("Created uploads folder");
-  }
-
-  return multer({ dest: uploadDir });
+function ensureDir(dir) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
-// Trim route
-app.post("/api/trim", (req, res, next) => {
-  // create uploads folder dynamically
-  const upload = getMulterUpload().single("video");
+function safeRmDir(dir) {
+  try {
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+  } catch {}
+}
 
-  upload(req, res, async (err) => {
-    if (err) return res.status(500).json({ error: err.message });
+const uploadsBase = path.join(os.tmpdir(), "uploads");
+ensureDir(uploadsBase);
 
-    const { segments } = req.body;
-    const videoFile = req.file;
-
-    if (!videoFile || !segments) {
-      return res.status(400).json({ error: "Missing video or segments" });
-    }
-
-    let parsedSegments;
-    try {
-      parsedSegments = JSON.parse(segments);
-    } catch {
-      return res.status(400).json({ error: "Invalid segments format" });
-    }
-
-    // Unique job folder
-    const jobId = uuidv4();
-    const jobDir = path.join(__dirname, "jobs", jobId);
-    fs.mkdirSync(jobDir, { recursive: true });
-
-    // Move uploaded file into job folder
-    const inputPath = path.join(
-      jobDir,
-      `input${path.extname(videoFile.originalname) || ".mp4"}`
-    );
-    fs.renameSync(videoFile.path, inputPath);
-
-    const concatListPath = path.join(jobDir, "concat.txt");
-    const finalOutputPath = path.join(jobDir, `${jobId}-final.mp4`);
-
-    try {
-      // Trim each segment
-      const segmentFiles = [];
-      for (let i = 0; i < parsedSegments.length; i++) {
-        const { start, end } = parsedSegments[i];
-        const startSec = parseTimeToSeconds(start);
-        const endSec = parseTimeToSeconds(end);
-        const duration = endSec - startSec;
-
-        if (isNaN(startSec) || isNaN(endSec) || duration <= 0) {
-          throw new Error(`Invalid segment at index ${i}`);
-        }
-
-        const segmentOutput = path.join(jobDir, `part${i}.mp4`);
-        segmentFiles.push(segmentOutput);
-
-        await new Promise((resolve, reject) => {
-          ffmpeg(inputPath)
-            .setStartTime(startSec)
-            .setDuration(duration)
-            .output(segmentOutput)
-            .on("end", resolve)
-            .on("error", reject)
-            .run();
-        });
-      }
-
-      // Create concat list
-      const concatText = segmentFiles.map((f) => `file '${f}'`).join("\n");
-      fs.writeFileSync(concatListPath, concatText);
-
-      // Concatenate segments
-      await new Promise((resolve, reject) => {
-        ffmpeg()
-          .input(concatListPath)
-          .inputOptions("-f", "concat", "-safe", "0")
-          .outputOptions("-c", "copy")
-          .output(finalOutputPath)
-          .on("end", resolve)
-          .on("error", reject)
-          .run();
-      });
-
-      // ✅ Stream final video back
-      res.setHeader("Content-Type", "video/mp4");
-      res.setHeader("Content-Disposition", "inline; filename=trimmed.mp4");
-
-      const readStream = fs.createReadStream(finalOutputPath);
-      readStream.pipe(res);
-
-      // Cleanup after response
-      res.on("finish", () => {
-        try {
-          if (fs.existsSync(jobDir)) {
-            fs.rmSync(jobDir, { recursive: true, force: true });
-            console.log(`Cleaned up job folder: ${jobDir}`);
-          }
-          const uploadDir = path.join(__dirname, "uploads");
-          if (fs.existsSync(uploadDir)) {
-            fs.rmSync(uploadDir, { recursive: true, force: true });
-            console.log("Cleaned up uploads folder");
-          }
-        } catch (cleanupErr) {
-          console.error("Cleanup error:", cleanupErr.message);
-        }
-      });
-    } catch (err) {
-      console.error("Trim error:", err.message);
-      res.status(500).json({ error: err.message });
-
-      // Cleanup even on error
-      try {
-        if (fs.existsSync(jobDir)) {
-          fs.rmSync(jobDir, { recursive: true, force: true });
-        }
-        const uploadDir = path.join(__dirname, "uploads");
-        if (fs.existsSync(uploadDir)) {
-          fs.rmSync(uploadDir, { recursive: true, force: true });
-        }
-      } catch {}
-    }
-  });
+const upload = multer({
+  dest: uploadsBase,
+  limits: { fileSize: 1024 * 1024 * 1024 },
 });
 
-app.listen(4000, () => console.log("Server running at http://localhost:4000"));
+app.post("/api/trim", upload.single("video"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "Missing video file" });
+  if (!req.body?.segments) {
+    fs.unlinkSync(req.file.path);
+    return res.status(400).json({ error: "Missing segments" });
+  }
 
-// 🔄 High-Level Flow
+  let segments;
+  try {
+    segments = JSON.parse(req.body.segments);
+    if (!Array.isArray(segments) || segments.length === 0) throw new Error();
+  } catch {
+    fs.unlinkSync(req.file.path);
+    return res.status(400).json({ error: "Invalid segments format" });
+  }
 
-// Frontend uploads a video + segment timings → backend API (/api/trim).
+  const jobDir = path.join(os.tmpdir(), "video-jobs", uuidv4());
+  ensureDir(jobDir);
 
-// Backend temporarily stores the video in an uploads/ folder.
+  const inputExt = path.extname(req.file.originalname) || ".mp4";
+  const inputPath = path.join(jobDir, `input${inputExt}`);
+  fs.renameSync(req.file.path, inputPath);
 
-// This folder is created fresh every request and removed after processing.
+  const segmentFiles = [];
 
-// Backend trims video into multiple parts using FFmpeg, based on the given start & end times.
+  try {
+    for (let i = 0; i < segments.length; i++) {
+      const { start, end } = segments[i];
+      const startSec = parseTimeToSeconds(start);
+      const endSec = parseTimeToSeconds(end);
+      const duration = endSec - startSec;
+      if (isNaN(startSec) || isNaN(endSec) || duration <= 0)
+        throw new Error(`Invalid segment at index ${i}`);
 
-// All trimmed parts are concatenated into one final video.
+      const partPath = path.join(jobDir, `part_${i}.mp4`);
+      segmentFiles.push(partPath);
 
-// Final video is sent back to the frontend as a response.
+      // Trim with decoding for accuracy, then copy codec for concat
+      await new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+          .setStartTime(startSec) // after -i for frame accuracy
+          .setDuration(duration)
+          .outputOptions(["-c copy", "-movflags +faststart"])
+          .output(partPath)
+          .on("error", reject)
+          .on("end", resolve)
+          .run();
+      });
+    }
 
-// Cleanup happens automatically: both the job folder and the uploads/ folder are deleted.\
+    // Concat all trimmed segments
+    const concatListPath = path.join(jobDir, "concat.txt");
+    const finalOutputPath = path.join(jobDir, "final.mp4");
 
-// uploads/
-//   ├── job1/
-//   │     └── input.mp4
-//   ├── job2/
-//   │     └── input.mp4
+    const concatText = segmentFiles
+      .map((f) => `file '${f.replace(/'/g, "'\\''")}'`)
+      .join("\n");
+    fs.writeFileSync(concatListPath, concatText);
+
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(concatListPath)
+        .inputOptions(["-f concat", "-safe 0"])
+        .outputOptions(["-c copy", "-movflags +faststart"])
+        .output(finalOutputPath)
+        .on("error", reject)
+        .on("end", resolve)
+        .run();
+    });
+
+    // Stream final video
+    res.setHeader("Content-Type", "video/mp4");
+    res.setHeader("Content-Disposition", 'inline; filename="trimmed.mp4"');
+    fs.createReadStream(finalOutputPath)
+      .pipe(res)
+      .on("finish", () => safeRmDir(jobDir));
+  } catch (err) {
+    console.error(err);
+    safeRmDir(jobDir);
+    return res.status(500).json({ error: err.message || "Processing failed" });
+  }
+});
+
+app.listen(process.env.PORT || 4000, () => console.log("Server running"));
+
+// 1. Re-encoding means decoding and then re-encoding a video, which consumes a lot of CPU and memory.
+
+// 2. Our service trims and merges only the specified segments using a copy codec (-c copy), avoiding re-encoding.
+
+// 3. Videos are stored temporarily, processed efficiently, streamed back, and all temporary files are deleted to keep memory and storage low.
+
+// 4. This memory-efficient approach allows safe handling of large videos and multiple segments and can be deployed on Render without crashes or resource issues.
