@@ -7,8 +7,10 @@ const fs = require("fs");
 const os = require("os");
 const multer = require("multer");
 
+const port = process.env.PORT || 4000;
+
 const app = express();
-app.use(cors({ origin: "http://localhost:3000", credentials: true }));
+app.use(cors({ origin: process.env.APP_ORIGIN, credentials: true }));
 app.use(express.json());
 
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
@@ -36,6 +38,10 @@ ensureDir(uploadsBase);
 const upload = multer({
   dest: uploadsBase,
   limits: { fileSize: 1024 * 1024 * 1024 },
+});
+
+app.get('/', (_, res) => {
+  res.send('Server is running.')
 });
 
 app.post("/api/trim", upload.single("video"), async (req, res) => {
@@ -122,7 +128,7 @@ app.post("/api/trim", upload.single("video"), async (req, res) => {
   }
 });
 
-app.listen(process.env.PORT || 4000, () => console.log("Server running"));
+app.listen(port, () => console.log("Server running on port", port));
 
 // 1. Re-encoding means decoding and then re-encoding a video, which consumes a lot of CPU and memory.
 
