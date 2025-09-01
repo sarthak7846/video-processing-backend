@@ -1,6 +1,6 @@
 {
   "watch": ["src"],
-  "ext": "ts",
+  "ext": "ts,json",
   "ignore": ["dist"],
-  "exec": "nodemon --exec node --loader ts-node/esm ./src/server.ts"
+  "exec": "npm run build && node dist/server.js"
 }
