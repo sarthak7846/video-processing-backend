@@ -2,16 +2,16 @@
   "name": "trim-server",
   "version": "1.0.0",
   "description": "",
-  "main": "server.js",
+  "main": "dist/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "build": "npx tsc -b",
+    "start": "npm run build && node dist/server.js",
+    "dev": "nodemon"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "axios": "^1.11.0",
@@ -24,6 +24,13 @@
     "uuid": "^11.1.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10"
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/fluent-ffmpeg": "^2.1.27",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^24.3.0",
+    "@types/uuid": "^10.0.0",
+    "nodemon": "^3.1.10",
+    "typescript": "^5.9.2"
   }
 }
