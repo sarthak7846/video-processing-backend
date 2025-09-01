@@ -3,13 +3,14 @@ import cors from "cors";
 import ffmpeg from "fluent-ffmpeg";
 import { v4 as uuidv4 } from "uuid";
 import path from "path";
-import fs from "fs";
 import os from "os";
+import fs from "fs";
 import multer from "multer";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import dotenv from "dotenv";
 
 import type { Request, Response } from "express";
+import { ensureDir, parseTimeToSeconds, safeRmDir } from "./utils/utils.js";
 
 const app = express();
 app.use(
@@ -22,24 +23,6 @@ app.use(express.json());
 dotenv.config();
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
-
-function parseTimeToSeconds(timeStr: string): number {
-  const parts = timeStr.split(":").map(Number);
-  const [hh = 0, mm = 0, ss = 0] = parts;
-  return hh * 3600 + mm * 60 + ss;
-}
-
-function ensureDir(dir: string): void {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-}
-
-function safeRmDir(dir: string): void {
-  try {
-    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
-  } catch {
-    // ignore
-  }
-}
 
 const uploadsBase = path.join(os.tmpdir(), "uploads");
 ensureDir(uploadsBase);
