@@ -49,11 +49,6 @@ const upload = multer({
   limits: { fileSize: 1024 * 1024 * 1024 }, // 1GB limit
 });
 
-// interface Segment {
-//   start: string;
-//   end: string;
-// }
-
 app.post(
   "/api/trim",
   upload.single("video"),
@@ -64,10 +59,12 @@ app.post(
       return res.status(400).json({ error: "Missing segments" });
     }
 
-    let segments: Segment[];
+    let segments = [];
     try {
       segments = JSON.parse(req.body.segments);
-      if (!Array.isArray(segments) || segments.length === 0) throw new Error();
+      if (!segments || !Array.isArray(segments) || segments.length === 0) {
+        throw new Error();
+      }
     } catch {
       fs.unlinkSync(req.file.path);
       return res.status(400).json({ error: "Invalid segments format" });
