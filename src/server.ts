@@ -13,9 +13,12 @@ import type { Request, Response } from "express";
 import { ensureDir, parseTimeToSeconds, safeRmDir } from "./utils/utils.js";
 
 const app = express();
+
+const allowedOrigins = process.env.APP_ORIGINS?.split(",") ?? [];
+
 app.use(
   cors({
-    origin: process.env.APP_ORIGIN,
+    origins: allowedOrigins,
     credentials: true,
   })
 );
