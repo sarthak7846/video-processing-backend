@@ -18,7 +18,7 @@ const allowedOrigins = process.env.APP_ORIGINS?.split(",") ?? [];
 
 app.use(
   cors({
-    origins: allowedOrigins,
+    origin: allowedOrigins,
     credentials: true,
   })
 );
