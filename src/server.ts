@@ -35,6 +35,10 @@ const upload = multer({
   limits: { fileSize: 1024 * 1024 * 1024 }, // 1GB limit
 });
 
+app.get("/", (req: Reuqest, res: Response) => {
+  res.send("Server is running");
+});
+
 app.post(
   "/api/trim",
   upload.single("video"),
