@@ -35,7 +35,7 @@ const upload = multer({
   limits: { fileSize: 1024 * 1024 * 1024 }, // 1GB limit
 });
 
-app.get("/", (req: Request, res: Response) => {
+app.get("/", (_, res: Response) => {
   res.send("Server is running");
 });
 
